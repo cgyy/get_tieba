@@ -170,9 +170,8 @@ def main():
     if len(args) > 1:
         keyword = args[1]
     else:
-        print ""
-        #sys.exit(1)
-        keyword = "锦衣夜行"
+        print "Keyword is blank!!"
+        sys.exit(1)
 
     PageItem.init_sqlite()
     main_url = "http://tieba.baidu.com/f/good?kw=%s" % get_keyword(keyword)
