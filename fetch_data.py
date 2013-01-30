@@ -3,14 +3,18 @@
 import sys
 import re
 import json
+import time
 import urllib
 import urlparse
 import traceback
+
 from tornado import httpclient, ioloop, database
+from tornado.options import define, options
+
 from lxml import etree
 from lxml.cssselect import CSSSelector as css
 from lxml.html import tostring
-#from database_sqlite import Connection
+
 
 class handle_request(object):
     def __init__(self, func_parser, exit_flag=False):
@@ -19,7 +23,9 @@ class handle_request(object):
 
     def __call__(self, response):
         if response.error:
+            1/0
             print "Error:", response.error
+            raise Exception(response.error)
         else:
             content_type = response.headers["Content-Type"]
             charset = re.match(".+charset=(.+)", content_type).group(1)
@@ -44,9 +50,9 @@ class handle_request(object):
 class PageItem(object):
     regex_num = re.compile(".+/p/(\d+)")
 
-    def __init__(self, url, reply_date):
+    def __init__(self, url, reply_str):
         self.url = url
-        self.reply_date = reply_date
+        self.reply_date = self._reply_date(reply_str)
         self.page_num = self._page_num()
 
     def parse_detail_page(self, html):
@@ -90,12 +96,26 @@ class PageItem(object):
         self.save_to_sqlite()
 
     def save_to_sqlite(self):
-        print self.title
-        PageItem.db.execute("insert into page_items(page_num, title, content, created_at) values(%s,%s,%s,%s)", 
-                             self.page_num, self.title, self.content, self.created_at)
+        print self.title, self.reply_date
+
+        try:
+            PageItem.db.execute("insert into page_items(keyword,page_num, title, content, created_at, reply_date) values(%s,%s,%s,%s,%s,%s)", 
+                            options.keyword,self.page_num, self.title, self.content, self.created_at, self.reply_date)
+        except:
+            print "Save error: %s", self.page_num
 
     def _page_num(self):
         return int(PageItem.regex_num.match(self.url).group(1))
+
+    def _reply_date(self, reply_str):
+        if reply_str.find(":") < 0:
+            #TODO year?
+            reply_date = "2012-%s" % reply_str
+        else:
+            date = time.strftime("%Y-%m-%d")
+            reply_date = "%s %s" % (date, reply_str)
+
+        return reply_date
 
 
     @classmethod 
@@ -131,8 +151,8 @@ def parse_summary_page(html):
     for li in li_elms:
         link = css("a.j_th_tit")(li)[0]
         href = base_url % link.get('href')
-        reply_date = css("span.j_reply_data")(li)[0]
-        link_items.append(PageItem(href, reply_date))
+        reply_str = css("span.j_reply_data")(li)[0].text
+        link_items.append(PageItem(href, reply_str))
 
     next_page_links = css("a.next")(doc)
     if next_page_links:
@@ -153,10 +173,7 @@ def async_fetch(page_items):
     async_client = httpclient.AsyncHTTPClient()
     for idx, page_item in enumerate(page_items):
         exit_flag = len(page_items) == idx + 1
-        try:
-            async_client.fetch(page_item.url, handle_request(page_item.parse_detail_page, exit_flag))
-        except:
-            print "fetch error"
+        async_client.fetch(page_item.url, handle_request(page_item.parse_detail_page, exit_flag))
 
     ioloop.IOLoop.instance().start()
 
@@ -176,23 +193,21 @@ def main():
         keyword = args[1]
     else:
         print "Keyword is blank!!"
-        keyword = "java"
-        #sys.exit(1)
+        keyword = "锦衣夜行"
 
+    define("keyword", keyword)
     PageItem.init_sqlite()
     main_url = "http://tieba.baidu.com/f/good?kw=%s" % get_keyword(keyword)
 
     next_link, detail_items = fetch_summary_page(main_url)
     while True:
         async_fetch(detail_items)
-        print next_link
 
         if next_link:
             next_link, detail_items = fetch_summary_page(next_link)
         else:
             break
      
-
 
 if __name__ == "__main__":
     main()
