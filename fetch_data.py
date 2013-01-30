@@ -5,11 +5,12 @@ import re
 import json
 import urllib
 import urlparse
+import traceback
 from tornado import httpclient, ioloop, database
 from lxml import etree
 from lxml.cssselect import CSSSelector as css
 from lxml.html import tostring
-from database_sqlite import Connection
+#from database_sqlite import Connection
 
 class handle_request(object):
     def __init__(self, func_parser, exit_flag=False):
@@ -83,15 +84,15 @@ class PageItem(object):
             current_content = tostring(post_content, encoding="UTF-8", method="text")
             contents.append(current_content)
 
-        self.title = css(".core_title_txt")(content_list)[0].text
+        self.title = css(".core_title_txt")(content_list)[0].text.encode("UTF-8")
         self.content = "\n\n".join(contents)
         self.created_at = created_at
         self.save_to_sqlite()
 
     def save_to_sqlite(self):
         print self.title
-        PageItem.db.execute("insert into page_items(page_num, title, content, created_at) values(?,?,?,?)", 
-                             self.page_num, self.title, self.content.decode("UTF-8"), self.created_at)
+        PageItem.db.execute("insert into page_items(page_num, title, content, created_at) values(%s,%s,%s,%s)", 
+                             self.page_num, self.title, self.content, self.created_at)
 
     def _page_num(self):
         return int(PageItem.regex_num.match(self.url).group(1))
@@ -99,21 +100,25 @@ class PageItem(object):
 
     @classmethod 
     def init_sqlite(cls):
-        cls.db = Connection("baidu_data.db")
+        cls.db = database.Connection("127.0.0.1", "test")
         try:
             migrate_str = """
-    CREATE TABLE page_items (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        page_num INTEGER NUll,
-        title VARCHAR(256) NULL,
-        content text NUll,
-        created_at DATETIME NULL,
-        reply_date DATETIME NULL
-    );
+CREATE TABLE page_items (
+    `id` int(11) NOT NULL AUTO_INCREMENT,
+    `keyword` varchar(255) DEFAULT NULL,
+    `page_num` int(11) DEFAULT NUll,
+    `title` text DEFAULT NULL,
+    `content` text DEFAULT NUll,
+    `created_at` DATETIME NULL,
+    `reply_date` DATETIME NULL,
+    `active` tinyint(1) DEFAULT '0',
+    PRIMARY KEY (`id`)
+) ENGINE=MyISAM AUTO_INCREMENT=12 DEFAULT CHARSET=utf8;
             """
             cls.db.execute(migrate_str)
         except:
             pass
+            #traceback.print_exc()
     
 
 def parse_summary_page(html):
@@ -171,7 +176,8 @@ def main():
         keyword = args[1]
     else:
         print "Keyword is blank!!"
-        sys.exit(1)
+        keyword = "java"
+        #sys.exit(1)
 
     PageItem.init_sqlite()
     main_url = "http://tieba.baidu.com/f/good?kw=%s" % get_keyword(keyword)
@@ -180,9 +186,10 @@ def main():
     while True:
         async_fetch(detail_items)
         print next_link
-        next_link, detail_items = fetch_summary_page(next_link)
 
-        if not next_link:
+        if next_link:
+            next_link, detail_items = fetch_summary_page(next_link)
+        else:
             break
      
 
