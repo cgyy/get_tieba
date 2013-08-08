@@ -23,9 +23,7 @@ class handle_request(object):
 
     def __call__(self, response):
         if response.error:
-            1/0
             print "Error:", response.error
-            raise Exception(response.error)
         else:
             content_type = response.headers["Content-Type"]
             charset = re.match(".+charset=(.+)", content_type).group(1)
